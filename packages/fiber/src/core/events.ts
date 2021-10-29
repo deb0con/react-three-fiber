@@ -7,6 +7,12 @@ export interface Intersection extends THREE.Intersection {
   eventObject: THREE.Object3D
 }
 
+interface PointerCaptureTarget {
+  setPointerCapture(pointerId: number): void
+  releasePointerCapture(pointerId: number): void
+  hasPointerCapture(pointerId: number): boolean
+}
+
 export interface IntesectionEvent<TSourceEvent> extends Intersection {
   intersections: Intersection[]
   stopped: boolean
@@ -19,11 +25,12 @@ export interface IntesectionEvent<TSourceEvent> extends Intersection {
   delta: number
   spaceX: number
   spaceY: number
+  target: PointerCaptureTarget
+  currentTarget: PointerCaptureTarget
 }
 
 export type Camera = THREE.OrthographicCamera | THREE.PerspectiveCamera
 export type ThreeEvent<TEvent> = TEvent & IntesectionEvent<TEvent>
-export type DomEvent = ThreeEvent<PointerEvent | MouseEvent | WheelEvent>
 
 export type Events = {
   onClick: EventListener
@@ -49,7 +56,7 @@ export type EventHandlers = {
   onPointerEnter?: (event: ThreeEvent<PointerEvent>) => void
   onPointerLeave?: (event: ThreeEvent<PointerEvent>) => void
   onPointerMove?: (event: ThreeEvent<PointerEvent>) => void
-  onPointerMissed?: (event: ThreeEvent<PointerEvent>) => void
+  onPointerMissed?: (event: MouseEvent) => void
   onPointerCancel?: (event: ThreeEvent<PointerEvent>) => void
   onWheel?: (event: ThreeEvent<WheelEvent>) => void
 }
@@ -61,13 +68,17 @@ export interface EventManager<TTarget> {
   disconnect?: () => void
 }
 
-export interface PointerCaptureTarget {
+export interface PointerCaptureData {
   intersection: Intersection
   target: Element
 }
 
 function makeId(event: Intersection) {
   return (event.eventObject || event.object).uuid + '/' + event.index + event.instanceId
+}
+
+function isPointerEvent(event: MouseEvent): event is PointerEvent {
+  return 'pointerId' in event
 }
 
 export function removeInteractivity(store: UseStore<RootState>, object: THREE.Object3D) {
@@ -81,7 +92,7 @@ export function removeInteractivity(store: UseStore<RootState>, object: THREE.Ob
     }
   })
   internal.capturedMap.forEach((captures, pointerId) => {
-    const captureData: PointerCaptureTarget | undefined = captures.get(object)
+    const captureData: PointerCaptureData | undefined = captures.get(object)
     if (captureData) {
       captures.delete(object)
       if (captures.size === 0) {
@@ -96,7 +107,7 @@ export function createEvents(store: UseStore<RootState>) {
   const temp = new THREE.Vector3()
 
   /** Sets up defaultRaycaster */
-  function prepareRay(event: DomEvent) {
+  function prepareRay(event: MouseEvent) {
     const state = store.getState()
     const { raycaster, mouse, camera, size } = state
     // https://github.com/pmndrs/react-three-fiber/pull/782
@@ -108,7 +119,7 @@ export function createEvents(store: UseStore<RootState>) {
   }
 
   /** Calculates delta */
-  function calculateDistance(event: DomEvent) {
+  function calculateDistance(event: MouseEvent) {
     const { internal } = store.getState()
     const dx = event.offsetX - internal.initialClick[0]
     const dy = event.offsetY - internal.initialClick[1]
@@ -160,11 +171,11 @@ export function createEvents(store: UseStore<RootState>) {
   }
 
   /**  Creates filtered intersects and returns an array of positive hits */
-  function patchIntersects(intersections: Intersection[], event: DomEvent) {
+  function patchIntersects(intersections: Intersection[], event: MouseEvent) {
     const { internal } = store.getState()
     // If the interaction is captured, make all capturing targets  part of the
     // intersect.
-    if ('pointerId' in event && internal.capturedMap.has(event.pointerId)) {
+    if (isPointerEvent(event) && internal.capturedMap.has(event.pointerId)) {
       for (let captureData of internal.capturedMap.get(event.pointerId)!.values()) {
         intersections.push(captureData.intersection)
       }
@@ -173,11 +184,11 @@ export function createEvents(store: UseStore<RootState>) {
   }
 
   /**  Handles intersections by forwarding them to handlers */
-  function handleIntersects(
+  function handleIntersects<TEvent extends MouseEvent>(
     intersections: Intersection[],
-    event: DomEvent,
+    event: TEvent,
     delta: number,
-    callback: (event: DomEvent) => void,
+    callback: (event: ThreeEvent<TEvent>) => void,
   ) {
     const { raycaster, mouse, camera, internal } = store.getState()
     // If anything has been found, forward it to the event listeners
@@ -222,13 +233,13 @@ export function createEvents(store: UseStore<RootState>) {
         let extractEventProps: any = {}
         // This iterates over the event's properties including the inherited ones. Native PointerEvents have most of their props as getters which are inherited, but polyfilled PointerEvents have them all as their own properties (i.e. not inherited). We can't use Object.keys() or Object.entries() as they only return "own" properties; nor Object.getPrototypeOf(event) as that *doesn't* return "own" properties, only inherited ones.
         for (let prop in event) {
-          let property = event[prop as keyof DomEvent]
+          let property = event[prop as keyof (MouseEvent | PointerEvent | WheelEvent)]
           // Only copy over atomics, leave functions alone as these should be
           // called as event.nativeEvent.fn()
           if (typeof property !== 'function') extractEventProps[prop] = property
         }
 
-        let raycastEvent: any = {
+        let raycastEvent: ThreeEvent<TEvent> = {
           ...hit,
           ...extractEventProps,
           spaceX: mouse.x,
@@ -243,7 +254,7 @@ export function createEvents(store: UseStore<RootState>) {
           stopPropagation: () => {
             // https://github.com/pmndrs/react-three-fiber/issues/596
             // Events are not allowed to stop propagation if the pointer has been captured
-            const capturesForPointer = 'pointerId' in event && internal.capturedMap.get(event.pointerId)
+            const capturesForPointer = isPointerEvent(event) && internal.capturedMap.get(event.pointerId)
 
             // We only authorize stopPropagation...
             if (
@@ -273,7 +284,7 @@ export function createEvents(store: UseStore<RootState>) {
         }
 
         // Call subscribers
-        callback(raycastEvent as DomEvent)
+        callback(raycastEvent)
         // Event bubbling may be interrupted by stopPropagation
         if (localState.stopped === true) break
       }
@@ -316,18 +327,16 @@ export function createEvents(store: UseStore<RootState>) {
       case 'onPointerCancel':
         return () => cancelPointer([])
       case 'onLostPointerCapture':
-        return (event: DomEvent) => {
-          if ('pointerId' in event) {
-            // If the object event interface had onLostPointerCapture, we'd call it here on every
-            // object that's getting removed.
-            store.getState().internal.capturedMap.delete(event.pointerId)
-          }
+        return (event: PointerEvent) => {
+          // If the object event interface had onLostPointerCapture, we'd call it here on every
+          // object that's getting removed.
+          store.getState().internal.capturedMap.delete(event.pointerId)
           cancelPointer([])
         }
     }
 
     // Any other pointer goes here ...
-    return (event: DomEvent) => {
+    return (event: MouseEvent) => {
       const { onPointerMissed, internal } = store.getState()
 
       prepareRay(event)
@@ -350,14 +359,14 @@ export function createEvents(store: UseStore<RootState>) {
       if (isClickEvent && !hits.length) {
         if (delta <= 2) {
           pointerMissed(event, internal.interaction)
-          if (onPointerMissed) onPointerMissed(event as ThreeEvent<PointerEvent>)
+          if (onPointerMissed) onPointerMissed(event)
         }
       }
 
       // Take care of unhover
       if (isPointerMove) cancelPointer(hits)
 
-      handleIntersects(hits, event, delta, (data: DomEvent) => {
+      handleIntersects(hits, event, delta, (data: ThreeEvent<MouseEvent>) => {
         const eventObject = data.eventObject
         const instance = (eventObject as unknown as Instance).__r3f
         const handlers = instance?.handlers
@@ -365,23 +374,25 @@ export function createEvents(store: UseStore<RootState>) {
         if (!instance?.eventCount) return
 
         if (isPointerMove) {
-          // Move event ...
+          // If it's a pointer move, the input event must be a PointerEvent
+          const pointerEvent = data as ThreeEvent<PointerEvent>
+
           if (handlers.onPointerOver || handlers.onPointerEnter || handlers.onPointerOut || handlers.onPointerLeave) {
             // When enter or out is present take care of hover-state
             const id = makeId(data)
             const hoveredItem = internal.hovered.get(id)
             if (!hoveredItem) {
               // If the object wasn't previously hovered, book it and call its handler
-              internal.hovered.set(id, data)
-              handlers.onPointerOver?.(data as ThreeEvent<PointerEvent>)
-              handlers.onPointerEnter?.(data as ThreeEvent<PointerEvent>)
+              internal.hovered.set(id, pointerEvent)
+              handlers.onPointerOver?.(pointerEvent)
+              handlers.onPointerEnter?.(pointerEvent)
             } else if (hoveredItem.stopped) {
               // If the object was previously hovered and stopped, we shouldn't allow other items to proceed
               data.stopPropagation()
             }
           }
           // Call mouse move
-          handlers.onPointerMove?.(data as ThreeEvent<PointerEvent>)
+          handlers.onPointerMove?.(pointerEvent)
         } else {
           // All other events ...
           const handler = handlers[name as keyof EventHandlers] as (event: ThreeEvent<PointerEvent>) => void
@@ -408,7 +419,7 @@ export function createEvents(store: UseStore<RootState>) {
 
   function pointerMissed(event: MouseEvent, objects: THREE.Object3D[]) {
     objects.forEach((object: THREE.Object3D) =>
-      (object as unknown as Instance).__r3f?.handlers.onPointerMissed?.(event as ThreeEvent<PointerEvent>),
+      (object as unknown as Instance).__r3f?.handlers.onPointerMissed?.(event),
     )
   }
 
