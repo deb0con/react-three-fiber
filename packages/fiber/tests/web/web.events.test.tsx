@@ -1,10 +1,11 @@
 jest.mock('scheduler', () => require('scheduler/unstable_mock'))
 
 import * as React from 'react'
-import { render, fireEvent } from '@testing-library/react'
+import { render, fireEvent, RenderResult } from '@testing-library/react'
 import { createWebGLContext } from '@react-three/test-renderer/src/createWebGLContext'
 
 import { Canvas, act } from '../../src/web/index'
+import { ThreeEvent } from '../../src/core/events'
 
 // @ts-ignore
 HTMLCanvasElement.prototype.getContext = function () {
@@ -303,5 +304,128 @@ describe('events ', () => {
 
     expect(handleClickFront).toHaveBeenCalled()
     expect(handleClickRear).not.toHaveBeenCalled()
+  })
+
+  describe('pointer capture', () => {
+    const handlePointerMove = jest.fn()
+    const captureActive = jest.fn((ev) => {
+      ev.stopPropagation()
+      ;(ev.target as any).setPointerCapture(ev.pointerId)
+    })
+
+    const pointerId = 1234
+
+    afterEach(() => {
+      handlePointerMove.mockClear()
+      captureActive.mockClear()
+    })
+
+    it('delivers events to the capturing object first', async () => {
+      const handleMoveFront = jest.fn((ev: ThreeEvent<PointerEvent>) => ev.stopPropagation())
+      const handleMoveRear = jest.fn()
+      const handleLeave = jest.fn()
+      const handleDownRear = jest.fn()
+
+      await act(async () => {
+        render(
+          <Canvas>
+            <mesh onPointerDown={captureActive} onPointerMove={handleMoveFront} onPointerLeave={handleLeave}>
+              <boxGeometry args={[1, 1]} />
+              <meshBasicMaterial />
+            </mesh>
+            <mesh onPointerDown={handleDownRear} onPointerMove={handleMoveRear} position-z={-3}>
+              <boxGeometry args={[2, 2]} />
+              <meshBasicMaterial />
+            </mesh>
+          </Canvas>,
+        )
+      })
+
+      const canvas = document.querySelector('canvas') as HTMLCanvasElement
+      canvas.setPointerCapture = jest.fn()
+      canvas.releasePointerCapture = jest.fn()
+
+      const down = new PointerEvent('pointerdown', { pointerId })
+      //@ts-ignore
+      down.offsetX = 640
+      //@ts-ignore
+      down.offsetY = 400
+
+      await act(async () => canvas.dispatchEvent(down))
+      expect(captureActive).toHaveBeenCalledTimes(1)
+      expect(handleDownRear).not.toHaveBeenCalled()
+
+      expect(canvas.setPointerCapture).toHaveBeenCalledWith(pointerId)
+      expect(canvas.releasePointerCapture).not.toHaveBeenCalled()
+
+      /* This will miss the front box but hit the rear one - but pointer capture should still send the event to the front one. */
+      const move = new PointerEvent('pointermove', { pointerId })
+      //@ts-ignore
+      down.offsetX = 577
+      //@ts-ignore
+      down.offsetY = 480
+
+      await act(async () => canvas.dispatchEvent(move))
+      expect(handleLeave).not.toHaveBeenCalled()
+      expect(handleMoveFront).toHaveBeenCalled()
+      expect(handleMoveRear).not.toHaveBeenCalled()
+    })
+
+    it('should release when the capture target is unmounted', async () => {
+      /* This component lets us unmount the event-handling object */
+      function PointerCaptureTest(props: { hasMesh: boolean }) {
+        return (
+          <Canvas>
+            {props.hasMesh && (
+              <mesh onPointerDown={captureActive} onPointerMove={handlePointerMove}>
+                <boxGeometry args={[2, 2]} />
+                <meshBasicMaterial />
+              </mesh>
+            )}
+          </Canvas>
+        )
+      }
+
+      let renderResult: RenderResult = undefined!
+      await act(async () => {
+        renderResult = render(<PointerCaptureTest hasMesh={true} />)
+        return renderResult
+      })
+
+      const canvas = document.querySelector('canvas') as HTMLCanvasElement
+
+      canvas.setPointerCapture = jest.fn()
+      canvas.releasePointerCapture = jest.fn()
+
+      const down = new PointerEvent('pointerdown', { pointerId })
+      //@ts-ignore
+      down.offsetX = 577
+      //@ts-ignore
+      down.offsetY = 480
+
+      /* testing-utils/react's fireEvent wraps the event like React does, so it doesn't match how our event handlers are called in production, so we call dispatchEvent directly. */
+      await act(async () => canvas.dispatchEvent(down))
+
+      /* This should have captured the DOM pointer */
+      expect(captureActive).toHaveBeenCalledTimes(1)
+      expect(canvas.setPointerCapture).toHaveBeenCalledWith(pointerId)
+      expect(canvas.releasePointerCapture).not.toHaveBeenCalled()
+
+      /* Now remove the mesh */
+      await act(async () => renderResult.rerender(<PointerCaptureTest hasMesh={false} />))
+
+      expect(canvas.releasePointerCapture).toHaveBeenCalledWith(pointerId)
+
+      const move = new PointerEvent('pointerdown', { pointerId })
+      //@ts-ignore
+      move.offsetX = 577
+      //@ts-ignore
+      move.offsetY = 480
+
+      await act(async () => canvas.dispatchEvent(move))
+
+      /* There should now be no pointer capture */
+      expect(handlePointerMove).not.toHaveBeenCalled()
+    })
   })
 })

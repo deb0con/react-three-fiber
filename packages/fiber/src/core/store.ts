@@ -4,7 +4,7 @@ import * as ReactThreeFiber from '../three-types'
 import create, { GetState, SetState, UseStore } from 'zustand'
 import shallow from 'zustand/shallow'
 import { prepare, Instance, InstanceProps } from './renderer'
-import { DomEvent, EventManager, ThreeEvent } from './events'
+import { EventManager, PointerCaptureData, ThreeEvent } from './events'
 
 export interface Intersection extends THREE.Intersection {
   eventObject: THREE.Object3D
@@ -55,9 +55,9 @@ export type InternalState = {
   lastProps: StoreProps
 
   interaction: THREE.Object3D[]
-  hovered: Map<string, DomEvent>
+  hovered: Map<string, ThreeEvent<PointerEvent>>
   subscribers: Subscription[]
-  capturedMap: Map<number, Map<THREE.Object3D, Intersection>>
+  capturedMap: Map<number, PointerCaptureData>
   initialClick: [x: number, y: number]
   initialHits: THREE.Object3D[]
 
@@ -90,7 +90,7 @@ export type RootState = {
   advance: (timestamp: number, runGlobalEffects?: boolean) => void
   setSize: (width: number, height: number) => void
   setDpr: (dpr: Dpr) => void
-  onPointerMissed?: (event: ThreeEvent<PointerEvent>) => void
+  onPointerMissed?: (event: MouseEvent) => void
 
   events: EventManager<any>
   internal: InternalState
@@ -119,7 +119,7 @@ export type StoreProps = {
           ReactThreeFiber.Object3DNode<THREE.PerspectiveCamera, typeof THREE.PerspectiveCamera> &
           ReactThreeFiber.Object3DNode<THREE.OrthographicCamera, typeof THREE.OrthographicCamera>
       >
-  onPointerMissed?: (event: ThreeEvent<PointerEvent>) => void
+  onPointerMissed?: (event: MouseEvent) => void
 }
 
 export type ApplyProps = (instance: Instance, newProps: InstanceProps) => void
@@ -286,7 +286,7 @@ const createStore = (
         lastProps: props,
 
         interaction: [],
-        hovered: new Map<string, DomEvent>(),
+        hovered: new Map<string, ThreeEvent<PointerEvent>>(),
         subscribers: [],
         initialClick: [0, 0],
         initialHits: [],
