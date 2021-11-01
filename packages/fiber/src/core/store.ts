@@ -57,7 +57,7 @@ export type InternalState = {
   interaction: THREE.Object3D[]
   hovered: Map<string, ThreeEvent<PointerEvent>>
   subscribers: Subscription[]
-  capturedMap: Map<number, Map<THREE.Object3D, PointerCaptureData>>
+  capturedMap: Map<number, PointerCaptureData>
   initialClick: [x: number, y: number]
   initialHits: THREE.Object3D[]
 
