@@ -83,6 +83,21 @@ function isPointerEvent(event: MouseEvent): event is PointerEvent {
   return 'pointerId' in event
 }
 
+/** Release pointer captures.
+ * This is called by releasePointerCapture in the API, and when an object is removed.
+ */
+function releaseInternalPointerCapture(
+  capturedMap: Map<number, PointerCaptureData>,
+  obj: THREE.Object3D,
+  captureData: PointerCaptureData,
+  pointerId: number,
+): void {
+  if (captureData.threeTarget === obj) {
+    capturedMap.delete(pointerId)
+    captureData.domTarget.releasePointerCapture(pointerId)
+  }
+}
+
 export function removeInteractivity(store: UseStore<RootState>, object: THREE.Object3D) {
   const { internal } = store.getState()
   // Removes every trace of an object from the data store
@@ -96,10 +111,7 @@ export function removeInteractivity(store: UseStore<RootState>, object: THREE.Ob
 
   // Has the removed object captured any pointers? If so, release them.
   internal.capturedMap.forEach((captureData, pointerId) => {
-    if (captureData.threeTarget === object) {
-      internal.capturedMap.delete(pointerId)
-      captureData.domTarget.releasePointerCapture(pointerId)
-    }
+    releaseInternalPointerCapture(internal.capturedMap, object, captureData, pointerId)
   })
 }
 
@@ -209,12 +221,8 @@ export function createEvents(store: UseStore<RootState>) {
 
         const releasePointerCapture = (id: number) => {
           const captureData = internal.capturedMap.get(id)
-          // If this object is the capture target...
-          if (captureData?.threeTarget === hit.eventObject) {
-            // then remove it.
-            internal.capturedMap.delete(id)
-            // and release the native pointer capture
-            captureData.domTarget.releasePointerCapture(id)
+          if (captureData) {
+            releaseInternalPointerCapture(internal.capturedMap, hit.eventObject, captureData, id)
           }
         }
 
