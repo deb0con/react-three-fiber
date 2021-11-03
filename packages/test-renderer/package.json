@@ -1,20 +1,20 @@
 {
   "name": "@react-three/test-renderer",
-  "version": "7.0.16",
+  "version": "7.0.16-eagle.1",
   "description": "Test Renderer for react-three-fiber",
-  "author": "Josh Ellis",
+  "author": "GrabCAD (https://grabcad.com)",
   "license": "MIT",
-  "private": false,
+  "private": true,
+  "publishConfig": {
+    "registry": "https://artifactory6.grabcad.net/artifactory/api/npm/npm-local/"
+  },
   "main": "dist/react-three-test-renderer.cjs.js",
   "module": "dist/react-three-test-renderer.esm.js",
   "types": "dist/react-three-test-renderer.cjs.d.ts",
-  "bugs": {
-    "url": "https://github.com/pmndrs/react-three-fiber/issues"
-  },
-  "homepage": "https://github.com/pmndrs/react-three-fiber/packages/react-three-test-renderer",
+  "homepage": "https://github.com/grabcad/react-three-fiber/packages/react-three-test-renderer",
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/pmndrs/react-three-fiber.git"
+    "url": "git+https://github.com/grabcad/react-three-fiber.git"
   },
   "preconstruct": {
     "entrypoints": [

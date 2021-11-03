@@ -1,6 +1,6 @@
 {
   "name": "@react-three/fiber",
-  "version": "7.0.17",
+  "version": "7.0.17-eagle.1",
   "description": "A React renderer for Threejs",
   "keywords": [
     "react",
@@ -9,22 +9,15 @@
     "three",
     "threejs"
   ],
-  "author": "Paul Henschel (https://github.com/drcmda)",
+  "author": "GrabCAD (https://grabcad.com)",
   "license": "MIT",
   "maintainers": [
-    "Josh Ellis (https://github.com/joshuaellis)"
+    "GrabCAD (https://grabcad.com)"
   ],
-  "bugs": {
-    "url": "https://github.com/pmndrs/react-three-fiber/issues"
-  },
-  "homepage": "https://github.com/pmndrs/react-three-fiber#readme",
+  "homepage": "https://github.com/grabcad/react-three-fiber#readme",
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/pmndrs/react-three-fiber.git"
-  },
-  "collective": {
-    "type": "opencollective",
-    "url": "https://opencollective.com/react-three-fiber"
+    "url": "git+https://github.com/grabcad/react-three-fiber.git"
   },
   "main": "dist/react-three-fiber.cjs.js",
   "module": "dist/react-three-fiber.esm.js",
@@ -60,5 +53,9 @@
     "react-dom": {
       "optional": true
     }
+  },
+  "private": "true",
+  "publishConfig": {
+    "registry": "https://artifactory6.grabcad.net/artifactory/api/npm/npm-local/"
   }
 }
