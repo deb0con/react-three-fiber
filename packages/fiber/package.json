@@ -54,7 +54,7 @@
       "optional": true
     }
   },
-  "private": "true",
+  "private": false,
   "publishConfig": {
     "registry": "https://artifactory6.grabcad.net/artifactory/api/npm/npm-local/"
   }
