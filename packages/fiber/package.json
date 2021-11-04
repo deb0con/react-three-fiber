@@ -1,6 +1,6 @@
 {
   "name": "@react-three/fiber",
-  "version": "7.0.17-eagle.1",
+  "version": "7.0.17-eagle.3",
   "description": "A React renderer for Threejs",
   "keywords": [
     "react",
@@ -9,7 +9,7 @@
     "three",
     "threejs"
   ],
-  "author": "GrabCAD (https://grabcad.com)",
+  "author": "Paul Henschel (https://github.com/drcmda)",
   "license": "MIT",
   "maintainers": [
     "GrabCAD (https://grabcad.com)"
