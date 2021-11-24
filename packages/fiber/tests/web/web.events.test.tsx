@@ -1,7 +1,7 @@
 jest.mock('scheduler', () => require('scheduler/unstable_mock'))
 
 import * as React from 'react'
-import { render, fireEvent, RenderResult } from '@testing-library/react'
+import { render, fireEvent, RenderResult, cleanup } from '@testing-library/react'
 import { createWebGLContext } from '@react-three/test-renderer/src/createWebGLContext'
 
 import { Canvas, act } from '../../src/web/index'
@@ -12,7 +12,37 @@ HTMLCanvasElement.prototype.getContext = function () {
   return createWebGLContext(this)
 }
 
-describe('events ', () => {
+function fireMouseEvent(name: string, { offsetX = 0, offsetY = 0 }): MouseEvent {
+  const ev = new MouseEvent(name)
+  //@ts-ignore
+  ev.offsetX = offsetX
+  //@ts-ignore
+  ev.offsetY = offsetY
+
+  fireEvent(document.querySelector('canvas') as HTMLCanvasElement, ev)
+  return ev
+}
+
+function firePointerEvent(name: string, { offsetX = 0, offsetY = 0, pointerId = 1 }): PointerEvent {
+  const ev = new PointerEvent(name)
+  //@ts-ignore
+  ev.offsetX = offsetX
+  //@ts-ignore
+  ev.offsetY = offsetY
+  //@ts-ignore
+  ev.pointerId = pointerId
+
+  fireEvent(document.querySelector('canvas') as HTMLCanvasElement, ev)
+  return ev
+}
+
+function fireClickEvent(options: { offsetX?: number; offsetY?: number } = {}): MouseEvent {
+  firePointerEvent('pointerdown', options)
+  firePointerEvent('pointerup', options)
+  return fireMouseEvent('click', options)
+}
+
+describe('events', () => {
   it('can handle onPointerDown', async () => {
     const handlePointerDown = jest.fn()
 
@@ -27,289 +57,378 @@ describe('events ', () => {
       )
     })
 
-    const evt = new PointerEvent('pointerdown')
-    //@ts-ignore
-    evt.offsetX = 577
-    //@ts-ignore
-    evt.offsetY = 480
-
-    fireEvent(document.querySelector('canvas') as HTMLCanvasElement, evt)
+    firePointerEvent('pointerdown', { offsetX: 577, offsetY: 480 })
 
     expect(handlePointerDown).toHaveBeenCalled()
   })
 
-  it('can handle onPointerMissed', async () => {
-    const handleClick = jest.fn()
-    const handleMissed = jest.fn()
+  describe('bubbling', () => {
+    it('bubbles pointer events to ancestors', async () => {
+      const handlePointerDownInner = jest.fn()
+      const handlePointerDownOuter = jest.fn()
 
-    await act(async () => {
-      render(
-        <Canvas>
-          <mesh onPointerMissed={handleMissed} onClick={handleClick}>
-            <boxGeometry args={[2, 2]} />
-            <meshBasicMaterial />
-          </mesh>
-        </Canvas>,
-      )
+      await act(async () => {
+        render(
+          <Canvas>
+            <group onPointerDown={handlePointerDownOuter}>
+              <group onPointerDown={handlePointerDownInner}>
+                <mesh>
+                  <boxGeometry args={[2, 2]} />
+                  <meshBasicMaterial />
+                </mesh>
+              </group>
+            </group>
+          </Canvas>,
+        )
+      })
+
+      firePointerEvent('pointerdown', { offsetX: 577, offsetY: 480 })
+
+      expect(handlePointerDownInner).toHaveBeenCalledTimes(1)
+      expect(handlePointerDownOuter).toHaveBeenCalledTimes(1)
     })
 
-    const evt = new MouseEvent('click')
-    //@ts-ignore
-    evt.offsetX = 0
-    //@ts-ignore
-    evt.offsetY = 0
+    it('bubbles click to ancestors', async () => {
+      const handleClick = jest.fn()
 
-    fireEvent(document.querySelector('canvas') as HTMLCanvasElement, evt)
+      await act(async () => {
+        render(
+          <Canvas>
+            <group onClick={handleClick}>
+              <mesh>
+                <boxGeometry args={[2, 2]} />
+                <meshBasicMaterial />
+              </mesh>
+            </group>
+          </Canvas>,
+        )
+      })
 
-    expect(handleClick).not.toHaveBeenCalled()
-    expect(handleMissed).toHaveBeenCalledWith(evt)
-  })
-
-  it('should not fire onPointerMissed when same element is clicked', async () => {
-    const handleClick = jest.fn()
-    const handleMissed = jest.fn()
-
-    await act(async () => {
-      render(
-        <Canvas>
-          <mesh onPointerMissed={handleMissed} onClick={handleClick}>
-            <boxGeometry args={[2, 2]} />
-            <meshBasicMaterial />
-          </mesh>
-        </Canvas>,
-      )
+      fireClickEvent({ offsetX: 577, offsetY: 480 })
+      expect(handleClick).toHaveBeenCalledTimes(1)
     })
 
-    const down = new PointerEvent('pointerdown')
-    //@ts-ignore
-    down.offsetX = 577
-    //@ts-ignore
-    down.offsetY = 480
+    it('bubbles hovers to ancestors', async () => {
+      const handlePointerOverInner = jest.fn()
+      const handlePointerOutInner = jest.fn()
 
-    fireEvent(document.querySelector('canvas') as HTMLCanvasElement, down)
+      const handlePointerOverOuter = jest.fn()
+      const handlePointerOutOuter = jest.fn()
 
-    const up = new PointerEvent('pointerup')
-    //@ts-ignore
-    up.offsetX = 577
-    //@ts-ignore
-    up.offsetY = 480
+      await act(async () => {
+        render(
+          <Canvas>
+            <group onPointerOver={handlePointerOverOuter} onPointerOut={handlePointerOutOuter}>
+              <mesh onPointerOver={handlePointerOverInner} onPointerOut={handlePointerOutInner}>
+                <boxGeometry args={[2, 2]} />
+                <meshBasicMaterial />
+              </mesh>
+            </group>
+          </Canvas>,
+        )
+      })
 
-    const evt = new MouseEvent('click')
-    //@ts-ignore
-    evt.offsetX = 577
-    //@ts-ignore
-    evt.offsetY = 480
+      firePointerEvent('pointermove', { offsetX: 577, offsetY: 480 })
+      expect(handlePointerOverInner).toHaveBeenCalledTimes(1)
+      expect(handlePointerOverOuter).toHaveBeenCalledTimes(1)
 
-    fireEvent(document.querySelector('canvas') as HTMLCanvasElement, evt)
+      firePointerEvent('pointermove', {})
+      expect(handlePointerOutInner).toHaveBeenCalledTimes(1)
+      expect(handlePointerOutOuter).toHaveBeenCalledTimes(1)
+    })
 
-    expect(handleClick).toHaveBeenCalled()
-    expect(handleMissed).not.toHaveBeenCalled()
-  })
+    it('bubbles through ancestors with no handlers', async () => {
+      const handlePointerDownOuter = jest.fn()
 
-  it('should not fire onPointerMissed on parent when child element is clicked', async () => {
-    const handleClick = jest.fn()
-    const handleMissed = jest.fn()
+      await act(async () => {
+        render(
+          <Canvas>
+            <group onPointerDown={handlePointerDownOuter}>
+              {/* no handlers */}
+              <group>
+                <mesh>
+                  <boxGeometry args={[2, 2]} />
+                  <meshBasicMaterial />
+                </mesh>
+              </group>
+            </group>
+          </Canvas>,
+        )
+      })
 
-    await act(async () => {
-      render(
-        <Canvas>
-          <group onPointerMissed={handleMissed}>
-            <mesh onClick={handleClick}>
+      firePointerEvent('pointerdown', { offsetX: 577, offsetY: 480 })
+
+      expect(handlePointerDownOuter).toHaveBeenCalledTimes(1)
+    })
+
+    describe('stopPropagation', () => {
+      it('prevents calling parent handlers', async () => {
+        const handleInner = jest.fn((ev: ThreeEvent<PointerEvent>) => ev.stopPropagation())
+        const handleOuter = jest.fn()
+
+        await act(async () => {
+          render(
+            <Canvas>
+              <group onPointerDown={handleOuter}>
+                <group onPointerDown={handleInner}>
+                  <mesh>
+                    <boxGeometry args={[2, 2]} />
+                    <meshBasicMaterial />
+                  </mesh>
+                </group>
+              </group>
+            </Canvas>,
+          )
+        })
+
+        firePointerEvent('pointerdown', { offsetX: 577, offsetY: 480 })
+        expect(handleInner).toHaveBeenCalledTimes(1)
+        expect(handleOuter).not.toHaveBeenCalled()
+      })
+
+      it('stops the event propagating outside the canvas', async () => {
+        const handleInner = jest.fn((ev: ThreeEvent<PointerEvent>) => ev.stopPropagation())
+        const handleOuter = jest.fn()
+
+        await act(async () => {
+          render(
+            <div onPointerDown={handleOuter}>
+              <Canvas>
+                <mesh onPointerDown={handleInner}>
+                  <boxGeometry args={[2, 2]} />
+                  <meshBasicMaterial />
+                </mesh>
+              </Canvas>
+            </div>,
+          )
+        })
+
+        firePointerEvent('pointerdown', { offsetX: 577, offsetY: 480 })
+        expect(handleInner).toHaveBeenCalledTimes(1)
+        expect(handleOuter).not.toHaveBeenCalled()
+      })
+    })
+
+    it('does not go through objects with handlers to objects behind', async () => {
+      const handleClickFront = jest.fn()
+      const handleClickRear = jest.fn()
+
+      await act(async () => {
+        render(
+          <Canvas>
+            <mesh onClick={handleClickFront}>
               <boxGeometry args={[2, 2]} />
               <meshBasicMaterial />
             </mesh>
-          </group>
-        </Canvas>,
-      )
+            <mesh onClick={handleClickRear} position-z={-3}>
+              <boxGeometry args={[2, 2]} />
+              <meshBasicMaterial />
+            </mesh>
+          </Canvas>,
+        )
+      })
+
+      fireClickEvent({ offsetX: 577, offsetY: 480 })
+      expect(handleClickFront).toHaveBeenCalledTimes(1)
+      expect(handleClickRear).not.toHaveBeenCalled()
     })
-
-    const down = new PointerEvent('pointerdown')
-    //@ts-ignore
-    down.offsetX = 577
-    //@ts-ignore
-    down.offsetY = 480
-
-    fireEvent(document.querySelector('canvas') as HTMLCanvasElement, down)
-
-    const up = new PointerEvent('pointerup')
-    //@ts-ignore
-    up.offsetX = 577
-    //@ts-ignore
-    up.offsetY = 480
-
-    const evt = new MouseEvent('click')
-    //@ts-ignore
-    evt.offsetX = 577
-    //@ts-ignore
-    evt.offsetY = 480
-
-    fireEvent(document.querySelector('canvas') as HTMLCanvasElement, evt)
-
-    expect(handleClick).toHaveBeenCalled()
-    expect(handleMissed).not.toHaveBeenCalled()
   })
 
-  it('can handle onPointerMissed on Canvas', async () => {
-    const handleMissed = jest.fn()
+  describe('onPointerMissed', () => {
+    it('is called on a leaf node', async () => {
+      const handleClick = jest.fn()
+      const handleMissed = jest.fn()
 
-    await act(async () => {
-      render(
-        <Canvas onPointerMissed={handleMissed}>
-          <mesh>
-            <boxGeometry args={[2, 2]} />
-            <meshBasicMaterial />
-          </mesh>
-        </Canvas>,
-      )
+      await act(async () => {
+        render(
+          <Canvas>
+            <mesh onPointerMissed={handleMissed} onClick={handleClick}>
+              <boxGeometry args={[2, 2]} />
+              <meshBasicMaterial />
+            </mesh>
+          </Canvas>,
+        )
+      })
+
+      const ev = fireClickEvent()
+
+      expect(handleClick).not.toHaveBeenCalledTimes(1)
+      expect(handleMissed).toHaveBeenCalledWith(ev)
     })
 
-    const evt = new MouseEvent('click')
-    //@ts-ignore
-    evt.offsetX = 0
-    //@ts-ignore
-    evt.offsetY = 0
+    it('is not called when same element is clicked', async () => {
+      const handleClick = jest.fn()
+      const handleMissed = jest.fn()
 
-    fireEvent(document.querySelector('canvas') as HTMLCanvasElement, evt)
-    expect(handleMissed).toHaveBeenCalledWith(evt)
+      await act(async () => {
+        render(
+          <Canvas>
+            <mesh onPointerMissed={handleMissed} onClick={handleClick}>
+              <boxGeometry args={[2, 2]} />
+              <meshBasicMaterial />
+            </mesh>
+          </Canvas>,
+        )
+      })
+
+      fireClickEvent({ offsetX: 577, offsetY: 480 })
+
+      expect(handleClick).toHaveBeenCalledTimes(1)
+      expect(handleMissed).not.toHaveBeenCalled()
+    })
+
+    it('is not called on parent when child element is clicked', async () => {
+      const handleClick = jest.fn()
+      const handleMissed = jest.fn()
+
+      await act(async () => {
+        render(
+          <Canvas>
+            <group onPointerMissed={handleMissed}>
+              <mesh onClick={handleClick}>
+                <boxGeometry args={[2, 2]} />
+                <meshBasicMaterial />
+              </mesh>
+            </group>
+          </Canvas>,
+        )
+      })
+
+      fireClickEvent({ offsetX: 577, offsetY: 480 })
+
+      expect(handleClick).toHaveBeenCalledTimes(1)
+      expect(handleMissed).not.toHaveBeenCalled()
+    })
+
+    it('is called on Canvas when nothing is clicked', async () => {
+      const handleMissed = jest.fn()
+
+      await act(async () => {
+        render(
+          <Canvas onPointerMissed={handleMissed}>
+            <mesh>
+              <boxGeometry args={[2, 2]} />
+              <meshBasicMaterial />
+            </mesh>
+          </Canvas>,
+        )
+      })
+
+      const ev = fireClickEvent()
+      expect(handleMissed).toHaveBeenCalledWith(ev)
+    })
   })
 
-  it('can handle onPointerMove', async () => {
-    const handlePointerMove = jest.fn()
+  describe('hover', () => {
     const handlePointerOver = jest.fn()
-    const handlePointerEnter = jest.fn()
+    const handlePointerMove = jest.fn()
     const handlePointerOut = jest.fn()
 
-    await act(async () => {
-      render(
-        <Canvas>
-          <mesh
-            onPointerOut={handlePointerOut}
-            onPointerEnter={handlePointerEnter}
-            onPointerMove={handlePointerMove}
-            onPointerOver={handlePointerOver}>
-            <boxGeometry args={[2, 2]} />
-            <meshBasicMaterial />
-          </mesh>
-        </Canvas>,
-      )
+    beforeEach(async () => {
+      await act(async () => {
+        render(
+          <Canvas>
+            <mesh onPointerOver={handlePointerOver} onPointerMove={handlePointerMove} onPointerOut={handlePointerOut}>
+              <boxGeometry args={[2, 2]} />
+              <meshBasicMaterial />
+            </mesh>
+          </Canvas>,
+        )
+      })
     })
 
-    const evt1 = new PointerEvent('pointermove')
-    //@ts-ignore
-    evt1.offsetX = 577
-    //@ts-ignore
-    evt1.offsetY = 480
+    afterEach(() => {
+      handlePointerOver.mockClear()
+      handlePointerMove.mockClear()
+      handlePointerOut.mockClear()
+      cleanup()
+    })
 
-    fireEvent(document.querySelector('canvas') as HTMLCanvasElement, evt1)
+    it('does not call handlers if the pointer is outside', () => {
+      firePointerEvent('pointermove', { offsetX: 0, offsetY: 0 })
 
-    expect(handlePointerMove).toHaveBeenCalled()
-    expect(handlePointerOver).toHaveBeenCalled()
-    expect(handlePointerEnter).toHaveBeenCalled()
+      expect(handlePointerOver).not.toHaveBeenCalled()
+      expect(handlePointerMove).not.toHaveBeenCalled()
+      expect(handlePointerOut).not.toHaveBeenCalled()
 
-    const evt2 = new PointerEvent('pointermove')
-    //@ts-ignore
-    evt2.offsetX = 0
-    //@ts-ignore
-    evt2.offsetY = 0
+      firePointerEvent('pointerout', { offsetX: 0, offsetY: 0 })
 
-    fireEvent(document.querySelector('canvas') as HTMLCanvasElement, evt2)
+      expect(handlePointerOver).not.toHaveBeenCalled()
+      expect(handlePointerMove).not.toHaveBeenCalled()
+      expect(handlePointerOut).not.toHaveBeenCalled()
 
-    expect(handlePointerOut).toHaveBeenCalled()
+      firePointerEvent('pointerover', { offsetX: 0, offsetY: 0 })
+
+      expect(handlePointerOver).not.toHaveBeenCalled()
+      expect(handlePointerMove).not.toHaveBeenCalled()
+      expect(handlePointerOut).not.toHaveBeenCalled()
+    })
+
+    it('calls handlers when over the object', () => {
+      firePointerEvent('pointermove', { offsetX: 577, offsetY: 480 })
+
+      expect(handlePointerOver).toHaveBeenCalledTimes(1)
+      expect(handlePointerMove).not.toHaveBeenCalled()
+      expect(handlePointerOut).not.toHaveBeenCalled()
+
+      firePointerEvent('pointermove', { offsetX: 577, offsetY: 480 })
+
+      expect(handlePointerOver).toHaveBeenCalledTimes(1)
+      expect(handlePointerMove).toHaveBeenCalledTimes(1)
+      expect(handlePointerOut).not.toHaveBeenCalled()
+
+      firePointerEvent('pointermove', { offsetX: 0, offsetY: 0 })
+      expect(handlePointerOver).toHaveBeenCalledTimes(1)
+      expect(handlePointerMove).toHaveBeenCalledTimes(1)
+      expect(handlePointerOut).toHaveBeenCalledTimes(1)
+    })
   })
 
-  it('should handle stopPropogation', async () => {
-    const handlePointerEnter = jest.fn().mockImplementation((e) => {
-      expect(() => e.stopPropagation()).not.toThrow()
-    })
-    const handlePointerLeave = jest.fn()
+  describe('an object with no over/out handlers', () => {
+    const handlePointerOver = jest.fn()
+    const handlePointerOut = jest.fn()
+    const handleClick = jest.fn()
 
-    await act(async () => {
-      render(
-        <Canvas>
-          <mesh onPointerLeave={handlePointerLeave} onPointerEnter={handlePointerEnter}>
-            <boxGeometry args={[2, 2]} />
-            <meshBasicMaterial />
-          </mesh>
-          <mesh position-z={3}>
-            <boxGeometry args={[2, 2]} />
-            <meshBasicMaterial />
-          </mesh>
-        </Canvas>,
-      )
-    })
-
-    const evt1 = new PointerEvent('pointermove')
-    //@ts-ignore
-    evt1.offsetX = 577
-    //@ts-ignore
-    evt1.offsetY = 480
-
-    fireEvent(document.querySelector('canvas') as HTMLCanvasElement, evt1)
-
-    expect(handlePointerEnter).toHaveBeenCalled()
-
-    const evt2 = new PointerEvent('pointermove')
-    //@ts-ignore
-    evt2.offsetX = 0
-    //@ts-ignore
-    evt2.offsetY = 0
-
-    fireEvent(document.querySelector('canvas') as HTMLCanvasElement, evt2)
-
-    expect(handlePointerLeave).toHaveBeenCalled()
-  })
-
-  it('should handle stopPropagation on click events', async () => {
-    const handleClickFront = jest.fn((e) => e.stopPropagation())
-    const handleClickRear = jest.fn()
-
-    await act(async () => {
-      render(
-        <Canvas>
-          <mesh onClick={handleClickFront}>
-            <boxGeometry args={[2, 2]} />
-            <meshBasicMaterial />
-          </mesh>
-          <mesh onClick={handleClickRear} position-z={-3}>
-            <boxGeometry args={[2, 2]} />
-            <meshBasicMaterial />
-          </mesh>
-        </Canvas>,
-      )
+    beforeEach(async () => {
+      await act(async () => {
+        render(
+          <Canvas>
+            <mesh name="front" onClick={handleClick}>
+              <boxGeometry args={[2, 2]} />
+              <meshBasicMaterial />
+            </mesh>
+            <mesh name="rear" onPointerOver={handlePointerOver} onPointerOut={handlePointerOut} position-z={-3}>
+              <boxGeometry args={[2, 2]} />
+              <meshBasicMaterial />
+            </mesh>
+          </Canvas>,
+        )
+      })
     })
 
-    const down = new PointerEvent('pointerdown')
-    //@ts-ignore
-    down.offsetX = 577
-    //@ts-ignore
-    down.offsetY = 480
+    afterEach(() => {
+      handleClick.mockClear()
+      handlePointerOver.mockClear()
+      handlePointerOut.mockClear()
+      cleanup()
+    })
 
-    fireEvent(document.querySelector('canvas') as HTMLCanvasElement, down)
+    it('still occludes hovers', () => {
+      firePointerEvent('pointermove', { offsetX: 577, offsetY: 480 })
+      expect(handlePointerOver).not.toHaveBeenCalled()
+      expect(handlePointerOut).not.toHaveBeenCalled()
+      expect(handleClick).not.toHaveBeenCalled()
 
-    const up = new PointerEvent('pointerup')
-    //@ts-ignore
-    up.offsetX = 577
-    //@ts-ignore
-    up.offsetY = 480
-
-    fireEvent(document.querySelector('canvas') as HTMLCanvasElement, up)
-
-    const event = new MouseEvent('click')
-    //@ts-ignore
-    event.offsetX = 577
-    //@ts-ignore
-    event.offsetY = 480
-
-    fireEvent(document.querySelector('canvas') as HTMLCanvasElement, event)
-
-    expect(handleClickFront).toHaveBeenCalled()
-    expect(handleClickRear).not.toHaveBeenCalled()
+      firePointerEvent('pointermove', { offsetX: 0, offsetY: 0 })
+      expect(handlePointerOver).not.toHaveBeenCalled()
+      expect(handlePointerOut).not.toHaveBeenCalled()
+      expect(handleClick).not.toHaveBeenCalled()
+    })
   })
 
   describe('pointer capture', () => {
     const handlePointerMove = jest.fn()
     const captureActive = jest.fn((ev) => {
-      ev.stopPropagation()
       ;(ev.target as any).setPointerCapture(ev.pointerId)
     })
 
@@ -320,8 +439,8 @@ describe('events ', () => {
       captureActive.mockClear()
     })
 
-    it('delivers events to the capturing object first', async () => {
-      const handleMoveFront = jest.fn((ev: ThreeEvent<PointerEvent>) => ev.stopPropagation())
+    it('delivers events only to the capturing object', async () => {
+      const handleMoveFront = jest.fn()
       const handleMoveRear = jest.fn()
       const handleLeave = jest.fn()
       const handleDownRear = jest.fn()
