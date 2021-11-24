@@ -55,11 +55,17 @@ export type InternalState = {
   lastProps: StoreProps
 
   interaction: THREE.Object3D[]
-  hovered: Map<string, ThreeEvent<PointerEvent>>
+  /** The keys are pointer IDs, and the value is the first/innermost pointerover event that was delivered
+   *
+   * That is, if you have `<group name="a" onPointerOver={...}><group name="b" onPointerOver={...}><mesh /></group></group>`,
+   * then the event stored here will have group b as its eventObject and the mesh as its object.
+   */
+  hovered: Map<number, ThreeEvent<PointerEvent>>
   subscribers: Subscription[]
+  /** The keys are pointer IDs */
   capturedMap: Map<number, PointerCaptureData>
   initialClick: [x: number, y: number]
-  initialHits: THREE.Object3D[]
+  initialHit: THREE.Object3D | undefined
 
   subscribe: (callback: React.MutableRefObject<RenderCallback>, priority?: number) => () => void
 }
@@ -286,11 +292,11 @@ const createStore = (
         lastProps: props,
 
         interaction: [],
-        hovered: new Map<string, ThreeEvent<PointerEvent>>(),
+        hovered: new Map<number, ThreeEvent<PointerEvent>>(),
         subscribers: [],
         initialClick: [0, 0],
-        initialHits: [],
-        capturedMap: new Map(),
+        initialHit: undefined,
+        capturedMap: new Map<number, PointerCaptureData>(),
 
         subscribe: (ref: React.MutableRefObject<RenderCallback>, priority = 0) => {
           set(({ internal }) => ({
