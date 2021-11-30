@@ -546,5 +546,53 @@ describe('events', () => {
       /* There should now be no pointer capture */
       expect(handlePointerMove).not.toHaveBeenCalled()
     })
+
+    it.only('delivers pointerout correctly after a parent was captured and released', async () => {
+      const handlePointerOver = jest.fn()
+      const handlePointerOut = jest.fn()
+
+      await act(async () =>
+        render(
+          <Canvas>
+            <group onPointerDown={captureActive}>
+              <group>
+                <mesh onPointerOver={handlePointerOver} onPointerOut={handlePointerOut}>
+                  <boxGeometry args={[2, 2]} />
+                  <meshBasicMaterial />
+                </mesh>
+              </group>
+            </group>
+          </Canvas>,
+        ),
+      )
+
+      const canvas = document.querySelector('canvas') as HTMLCanvasElement
+      canvas.setPointerCapture = jest.fn()
+      canvas.releasePointerCapture = jest.fn()
+
+      // move onto the mesh -> get pointerover
+
+      firePointerEvent('pointermove', { offsetX: 577, offsetY: 480 })
+      expect(handlePointerOver).toHaveBeenCalledTimes(1)
+
+      // down -> should be able to capture
+
+      firePointerEvent('pointerdown', { offsetX: 577, offsetY: 480 })
+      expect(captureActive).toHaveBeenCalledTimes(1)
+      expect(canvas.setPointerCapture).toHaveBeenCalledTimes(1)
+      expect(canvas.releasePointerCapture).not.toHaveBeenCalled()
+      expect(handlePointerOut).not.toHaveBeenCalled()
+
+      // up -> automatically releases, but the mesh is still hovered
+
+      firePointerEvent('pointerup', { offsetX: 577, offsetY: 480 })
+      firePointerEvent('lostpointercapture', { offsetX: 577, offsetY: 480 })
+      expect(handlePointerOut).not.toHaveBeenCalled()
+
+      // move away from the mesh -> get pointerout
+
+      firePointerEvent('pointermove', { offsetX: 0, offsetY: 0 })
+      expect(handlePointerOut).toHaveBeenCalledTimes(1)
+    })
   })
 })
