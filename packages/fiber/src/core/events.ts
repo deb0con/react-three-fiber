@@ -72,7 +72,9 @@ export interface EventManager<TTarget> {
 }
 
 export interface PointerCaptureData {
-  threeTarget: Object3D
+  /** The event that was used to capture.
+   * In this object, `eventObject` is the capture target (possibly a parent), while `object` is the object that was actually hit.
+   */
   intersection: Intersection
   domTarget: Element
 }
@@ -96,15 +98,26 @@ function isAncestor(ancestor: Object3D, child: Object3D | null | undefined) {
 }
 
 /** Release pointer captures.
- * This is called by releasePointerCapture in the API, and when an object is removed.
+ * This is called by releasePointerCapture in the API, and when an object is removed. If nothing is captured, it does nothing.
+ *
+ * @param obj The object to release from, or undefined. If obj is not the captured object, nothing will happen. If obj is undefined, it will release whatever object is currently captured.
+ * @param captureData The captureData for the current capture. If undefined, it will be fetched from capturedMap. (This is only included to reduce lookups.)
  */
 function releaseInternalPointerCapture(
   capturedMap: Map<number, PointerCaptureData>,
-  obj: THREE.Object3D,
-  captureData: PointerCaptureData,
+  obj: THREE.Object3D | undefined,
+  captureData: PointerCaptureData | undefined,
   pointerId: number,
 ): void {
-  if (captureData.threeTarget === obj) {
+  if (!captureData) {
+    captureData = capturedMap.get(pointerId)
+  }
+  if (!captureData) {
+    // no captures
+    return
+  }
+
+  if (!obj || captureData.intersection.eventObject === obj) {
     capturedMap.delete(pointerId)
     captureData.domTarget.releasePointerCapture(pointerId)
   }
@@ -222,11 +235,15 @@ export function createEvents(store: UseStore<RootState>) {
         if (!(hit.eventObject as unknown as Instance)?.__r3f?.eventCount) {
           continue
         }
-        const hasPointerCapture = (id: number) => internal.capturedMap.get(id)?.threeTarget === hit.eventObject
+        const hasPointerCapture = (id: number) =>
+          internal.capturedMap.get(id)?.intersection.eventObject === hit.eventObject
 
         const setPointerCapture = (id: number) => {
           // This replaces any previous capture. If we had onPointerLost we'd call it on the old capture here.
-          const captureData = { intersection: hit, domTarget: event.target as Element, threeTarget: hit.eventObject }
+          const captureData = {
+            intersection: hit,
+            domTarget: event.target as Element,
+          }
           internal.capturedMap.set(id, captureData)
           internal.hovered.set(id, raycastEvent as unknown as ThreeEvent<PointerEvent>)
           // Call the original event now
@@ -235,14 +252,7 @@ export function createEvents(store: UseStore<RootState>) {
 
         const releasePointerCapture = (id: number) => {
           const captureData = internal.capturedMap.get(id)
-          if (captureData && captureData.threeTarget === hit.eventObject) {
-            // If the capture target is not really hovered, unmark it as hovered.
-            // We might need to send pointerout in that case?
-            if (!intersections.some((i) => i.eventObject === hit.eventObject)) {
-              internal.hovered.delete(id)
-            }
-            releaseInternalPointerCapture(internal.capturedMap, hit.eventObject, captureData, id)
-          }
+          releaseInternalPointerCapture(internal.capturedMap, hit.eventObject, captureData, id)
         }
 
         // Add native event props
@@ -303,7 +313,7 @@ export function createEvents(store: UseStore<RootState>) {
       hits[0].instanceId !== hoveredEvent.instanceId
     ) {
       internal.hovered.delete(pointerId)
-      for (let eventObject = hoveredEvent.eventObject; eventObject; eventObject = eventObject.parent!) {
+      for (let eventObject = hoveredEvent.object; eventObject; eventObject = eventObject.parent!) {
         const instance = (eventObject as unknown as Instance).__r3f
         const handlers = instance?.handlers
         if (handlers && (handlers.onPointerOut || handlers.onPointerLeave)) {
@@ -325,7 +335,7 @@ export function createEvents(store: UseStore<RootState>) {
       case 'onLostPointerCapture':
         return (ev: PointerEvent) => {
           // If the object event interface had onLostPointerCapture, we'd call it here.
-          store.getState().internal.capturedMap.delete(ev.pointerId)
+          releaseInternalPointerCapture(store.getState().internal.capturedMap, undefined, undefined, ev.pointerId)
         }
     }
 
