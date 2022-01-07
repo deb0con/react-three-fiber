@@ -426,6 +426,46 @@ describe('events', () => {
     })
   })
 
+  describe('over/out handlers on parent node', () => {
+    const handlePointerOver = jest.fn()
+    const handlePointerOut = jest.fn()
+
+    beforeEach(async () => {
+      await act(async () => {
+        render(
+          <Canvas>
+            <group name="parent" onPointerOver={handlePointerOver} onPointerOut={handlePointerOut}>
+              <mesh name="child">
+                <boxGeometry args={[2, 2]} />
+                <meshBasicMaterial />
+              </mesh>
+            </group>
+          </Canvas>,
+        )
+      })
+    })
+
+    afterEach(() => {
+      handlePointerOver.mockClear()
+      handlePointerOut.mockClear()
+      cleanup()
+    })
+
+    it('still calls handlers', () => {
+      firePointerEvent('pointermove', { offsetX: 0, offsetY: 0 })
+      expect(handlePointerOver).not.toHaveBeenCalled()
+      expect(handlePointerOut).not.toHaveBeenCalled()
+
+      firePointerEvent('pointermove', { offsetX: 577, offsetY: 480 })
+      expect(handlePointerOver).toHaveBeenCalledTimes(1)
+      expect(handlePointerOut).not.toHaveBeenCalled()
+
+      firePointerEvent('pointermove', { offsetX: 0, offsetY: 0 })
+      expect(handlePointerOver).toHaveBeenCalledTimes(1)
+      expect(handlePointerOut).toHaveBeenCalledTimes(1)
+    })
+  })
+
   describe('pointer capture', () => {
     const handlePointerMove = jest.fn()
     const captureActive = jest.fn((ev) => {
