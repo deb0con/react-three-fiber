@@ -547,7 +547,7 @@ describe('events', () => {
       expect(handlePointerMove).not.toHaveBeenCalled()
     })
 
-    it.only('delivers pointerout correctly after a parent was captured and released', async () => {
+    it('delivers pointerout correctly after a parent was captured and released', async () => {
       const handlePointerOver = jest.fn()
       const handlePointerOut = jest.fn()
 
