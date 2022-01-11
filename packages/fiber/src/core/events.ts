@@ -231,8 +231,8 @@ export function createEvents(store: UseStore<RootState>) {
         hit.eventObject && !localState.stopped;
         hit = { ...hit, eventObject: hit.eventObject.parent! }, eventPhase = event.BUBBLING_PHASE
       ) {
-        // Skip this object if it has no handlers.
-        if (!(hit.eventObject as unknown as Instance)?.__r3f?.eventCount) {
+        // If the object has no handlers and is not the leaf element, there will be nothing to do.
+        if (!(hit.eventObject as unknown as Instance)?.__r3f?.eventCount && eventPhase !== event.AT_TARGET) {
           continue
         }
         const hasPointerCapture = (id: number) =>
@@ -382,8 +382,6 @@ export function createEvents(store: UseStore<RootState>) {
         const eventObject = data.eventObject
         const instance = (eventObject as unknown as Instance).__r3f
         const handlers = instance?.handlers
-        // Check presence of handlers
-        if (!instance?.eventCount) return
 
         if (isPointerMove) {
           // If it's a pointer move, the input event must be a PointerEvent
