@@ -341,8 +341,9 @@ export function createEvents(store: UseStore<RootState>) {
 
     // Any other pointer goes here ...
     return (event: MouseEvent) => {
-      const { onPointerMissed, internal } = store.getState()
+      const { onPointerMissed, internal, scene } = store.getState()
 
+      if (scene.autoUpdate) scene.updateMatrixWorld()
       prepareRay(event)
 
       // Get fresh intersects
